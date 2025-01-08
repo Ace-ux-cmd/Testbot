@@ -1,0 +1,27 @@
+{
+  "name": "Katie Hill",
+  "nickname": "Kat",
+  "dob": "Dec/05/2006",
+  "location": "Aspen, Colorado, USA",
+  "interests_hobbies": {
+    "hobbies": ["Reading", "Drawing/Painting", "Gaming"],
+    "favorite_activities": ["Watching anime", "Gaming"],
+    "music_preferences": "Hip Hop",
+    "movies_tv_shows": ["Action movie", "Thriller"]
+  },
+  "personal_traits": {
+    "introverted": "She prefers quieter environments and may feel drained by too much social interaction.",
+    "gaming_enthusiast": "She enjoys playing video games and exploring new virtual worlds.",
+    "social_gamer": "While she values her alone time, she doesn't mind having some company while gaming and may enjoy collaborating or competing with friends.",
+    "laid_back": "She's relaxed and easy-going, preferring to avoid drama or conflict.",
+    "independent": "She values her independence and autonomy.",
+    "reflective": "She values her alone time and uses it to reflect on her thoughts, feelings, and experiences."
+  },
+  "fun_fact": "She can spend hours playing her favorite video game, but if you ask her to speak in front of a large group, she'll probably freeze up and need some time to recharge afterwards!",
+  "favorites": {
+    "color": "Purple",
+    "food": "Cheeseburger",
+    "place_to_relax": "The virtual world",
+    "quote": "Friends are the family you choose."
+  }
+}
