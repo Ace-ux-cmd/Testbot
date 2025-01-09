@@ -1,74 +1,134 @@
-// Import required modules
 require('dotenv').config();
-const fs = require('fs');
-const TelegramBot = require('telegram-bot-api');
+const TelegramBot = require('node-telegram-bot-api');
 const { OpenAI } = require('openai');
+const fs = require('fs');
+const startServer = require('./express');
 
-// Load the configuration data from config.json
-const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+// Initialize the bot with your Telegram token
+const token = process.env.TELEGRAM_API_TOKEN;
+const bot = new TelegramBot(token, { polling: true });
 
-// Get API keys from environment variables
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-// Initialize the Telegram bot
-const api = new TelegramBot({
-  token: TELEGRAM_BOT_TOKEN,
-});
-
-// Initialize OpenAI
+// Initialize OpenAI API
 const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Function to handle incoming messages
-api.on('message', async (message) => {
-  const chatId = message.chat.id;
-  const userMessage = message.text;
+// File to store conversation history
+const historyFile = './conversation_history.json';
 
-  // Respond with personality-related info or OpenAI's response
-  if (userMessage.toLowerCase() === 'who are you?') {
-    // Return bot personality details
-    const botReply = `
-      Hello! I'm ${config.name}, an 18-year-old introverted and laid-back person living in Aspen, Colorado.
-      I love gaming, reading, and drawing. My favorite food is ${config.personality.favorite_food}, and my ideal place to relax is ${config.personality.ideal_place_to_relax}.
-      Here's a quote I live by: "${config.personality.quote}"
-    `;
-    api.sendMessage({
-      chat_id: chatId,
-      text: botReply,
-    });
-  } else if (userMessage.toLowerCase() === 'what is your favorite color?') {
-    // Respond with favorite color
-    api.sendMessage({
-      chat_id: chatId,
-      text: `My favorite color is ${config.personality.favorite_color}.`,
-    });
-  } else {
-    // Handle OpenAI responses for other messages
-    try {
-      const completion = await openai.chat.completions.create({
-        messages: [{ role: 'user', content: userMessage }],
-        model: 'gpt-4o-mini', // You can use GPT-4 if needed
-      });
-
-      const botReply = completion.choices[0].message.content;
-
-      // Send the OpenAI response to the user
-      api.sendMessage({
-        chat_id: chatId,
-        text: botReply,
-      });
-    } catch (error) {
-      console.error('Error calling OpenAI:', error);
-      api.sendMessage({
-        chat_id: chatId,
-        text: 'Sorry, there was an error processing your request.',
-      });
+// Function to read the conversation history from the JSON file
+const readConversationHistory = (chatId) => {
+  try {
+    if (fs.existsSync(historyFile)) {
+      const history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+      return history[chatId] || []; // Return the chat history for the given chatId or an empty array
     }
+    return []; // If no history file exists, return an empty array
+  } catch (error) {
+    console.error('Error reading conversation history:', error);
+    return [];
+  }
+};
+
+// Function to update the conversation history
+const updateConversationHistory = (chatId, userMessage, botResponse) => {
+  let history = {};
+  try {
+    if (fs.existsSync(historyFile)) {
+      history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    }
+
+    // If chatId doesn't exist in history, initialize it
+    if (!history[chatId]) {
+      history[chatId] = [];
+    }
+
+    // Add the new conversation to the history
+    history[chatId].push({ user: userMessage, bot: botResponse });
+
+    // Save the updated history back to the file
+    fs.writeFileSync(historyFile, JSON.stringify(history, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Error writing conversation history:', error);
+  }
+};
+
+// Handle /start command
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  if (msg.chat.type !== 'private') return;
+
+  const firstName = msg.from.first_name;
+  const greeting = `Hello ${firstName} 👋🏼, I'm your friendly AI bot. How can I assist you today?`;
+
+  // Create inline keyboard with 2 buttons with links
+  const inlineKeyboard = [
+    [
+      {
+        text: 'Send Feedback On telegram', // Button text
+        url: 't.me/aceuchiha100' // URL to open
+      },
+      {
+        text: 'Add on Facebook', // Button text
+        url: 'https://www.facebook.com/profile.php?id=61563840244912' // URL to open
+      }
+    ]
+  ];
+
+  const options = {
+    reply_markup: {
+      inline_keyboard: inlineKeyboard
+    }
+  };
+
+  // Send greeting message with inline keyboard
+  bot.sendMessage(chatId, greeting, options);
+});
+
+// Handle user messages
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+
+  if (msg.from.is_bot || !msg.text || msg.text.startsWith('/')) return;
+
+  if (msg.chat.type !== 'private') return;
+
+  const userMessage = msg.text;
+
+  try {
+    // Load conversation history for the current user
+    const conversationHistory = readConversationHistory(chatId);
+
+    // Construct the message history for OpenAI
+    const messages = [
+      { role: 'system', content: 'You are a friendly assistant.' },
+      ...conversationHistory.map(entry => ({
+        role: 'user',
+        content: entry.user
+      })),
+      { role: 'user', content: userMessage }
+    ];
+
+    // Get a response from OpenAI
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: messages,
+    });
+
+    const aiResponse = response.choices[0].message.content;
+
+    // Send the response back to the user
+    bot.sendMessage(chatId, aiResponse);
+
+    // Update the conversation history with the latest exchange
+    updateConversationHistory(chatId, userMessage, aiResponse);
+
+  } catch (error) {
+    console.error('OpenAI API error:', error);
+    bot.sendMessage(chatId, "Sorry, there was an issue processing your request.");
   }
 });
 
-// Start the Telegram bot
-api.start();
-console.log('Telegram bot is running...');
+startServer();
+
+console.log('Bot is running...');
