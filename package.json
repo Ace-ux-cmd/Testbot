@@ -11,10 +11,12 @@
   "license": "ISC",
   "dependencies": {
     "@types/node": "^18.0.6",
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "facebook-chat-api": "^1.8.0",
     "node-telegram-bot-api": "^0.66.0",
-    "openai": "^4.77.4",
-    "telegram-bot-api": "^2.0.1"
+    "openai": "^4.83.0"
   }
 }
