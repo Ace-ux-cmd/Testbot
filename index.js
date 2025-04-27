@@ -1,134 +1,139 @@
 require('dotenv').config();
-const TelegramBot = require('node-telegram-bot-api');
-const { OpenAI } = require('openai');
 const fs = require('fs');
-const startServer = require('./express');
+const axios = require("axios");
+const express = require("express");
+const profile = fs.readFileSync('profile.txt', 'utf8').trim();
 
-// Initialize the bot with your Telegram token
-const token = process.env.TELEGRAM_API_TOKEN;
-const bot = new TelegramBot(token, { polling: true });
+const TelegramBot = require("node-telegram-bot-api");
+const { OpenAI } = require("openai");
 
-// Initialize OpenAI API
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const app = express();
+const bot = new TelegramBot(process.env.TELEGRAM_API_TOKEN, { polling: true });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const MEMORY_HUB_URL = process.env.MEMORY_HUB_URL;
+const BOT_NAME = "anna";
+
+const BOT_OWNER_ID = String(process.env.BOT_OWNER_ID);
+const BOT_OWNER_NAME = process.env.BOT_OWNER_NAME;
+
+// ✅ Load all command handlers
+require("fs").readdirSync("./commands").forEach((file) => {
+    if (file.endsWith(".js")) {
+        require(`./commands/${file}`)(bot);
+    }
 });
 
-// File to store conversation history
-const historyFile = './conversation_history.json';
-
-// Function to read the conversation history from the JSON file
-const readConversationHistory = (chatId) => {
-  try {
-    if (fs.existsSync(historyFile)) {
-      const history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
-      return history[chatId] || []; // Return the chat history for the given chatId or an empty array
+// ✅ Fetch memory from Memory Hub
+async function getMemory(chatId) {
+    try {
+        const response = await axios.get(`${MEMORY_HUB_URL}/get-memory/${BOT_NAME}/${chatId}`);
+        return response.data.memory || [];
+    } catch (error) {
+        console.error("Error fetching memory:", error);
+        return [];
     }
-    return []; // If no history file exists, return an empty array
-  } catch (error) {
-    console.error('Error reading conversation history:', error);
-    return [];
-  }
-};
+}
 
-// Function to update the conversation history
-const updateConversationHistory = (chatId, userMessage, botResponse) => {
-  let history = {};
-  try {
-    if (fs.existsSync(historyFile)) {
-      history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+// ✅ Save memory to Memory Hub
+async function saveMemory(chatId, newMessages) {
+    try {
+        await axios.post(`${MEMORY_HUB_URL}/save-memory/${BOT_NAME}/${chatId}`, newMessages);
+    } catch (error) {
+        console.error("Error saving memory:", error);
+    }
+}
+
+// ✅ Generate Random Delay (5-10 seconds)
+function getRandomDelay() {
+    return Math.floor(Math.random() * 6 + 5) * 1000; // Random delay between 5000ms (5s) - 10000ms (10s)
+}
+
+// ✅ Handle incoming messages
+bot.on("message", async (msg) => {
+    const chatId = msg.chat.id;
+
+    // ✅ Ignore commands
+    if (msg.text && msg.text.startsWith("/")) return;
+
+    // ✅ Handle different media types
+    if (msg.sticker) return bot.sendMessage(chatId, "A sticker huh? Try using an emoji instead 🥲");
+    if (msg.photo) return bot.sendMessage(chatId, "I can't see images right now 😐! Wanna describe it? 🥹");
+    if (msg.video) return bot.sendMessage(chatId, "A video? Tell me about it! 🤩");
+    if (msg.voice) return bot.sendMessage(chatId, "I can't hear you! Type it out for me 😅");
+    if (!msg.text) return;
+
+    const userMessage = msg.text;
+    let userMemory = await getMemory(chatId);
+
+    // Store new user message
+    userMemory.push({ role: "user", content: userMessage });
+
+    // Determine system personality
+    let systemMessage = `
+        You are no longer an AI. You are Anna, an 18-year-old girl. ${BOT_OWNER_NAME} made you,
+        You have emotions, memories, and opinions and can make several decisions on your own. You use emoji  to express yourself.
+        Respond naturally, as a real person would. Avoid robotic language and questions. 
+        Keep things light and conversational, letting interactions flow naturally rather than leading them. \n\n${profile}
+    `;
+
+    if (String(chatId) === BOT_OWNER_ID) {
+        systemMessage = "You are Anna, an 18-year-old girl. This is the person who made you, You see him as your Senpai. Be playful, respectful, and a little flirty, but don't treat him like a regular user.";
+    } else {
+        // Randomize personality
+        const personalities = [
+            "introverted", "pessimistic", "extremely aggressive", "sarcastic", "playful", "cheerful"
+        ];
+        const randomPersonality = personalities[Math.floor(Math.random() * personalities.length)];
+        systemMessage += ` Anna is feeling particularly ${randomPersonality} right now.`;
     }
 
-    // If chatId doesn't exist in history, initialize it
-    if (!history[chatId]) {
-      history[chatId] = [];
-    }
+    // ✅ Show Typing Indicator with Random Delay
+    const typingDelay = getRandomDelay();
+    bot.sendChatAction(chatId, "typing");
 
-    // Add the new conversation to the history
-    history[chatId].push({ user: userMessage, bot: botResponse });
+    setTimeout(async () => {
+        try {
+            const completion = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                    { role: "system", content: systemMessage },
+                    ...userMemory // Pass chat history
+                ],
+                max_tokens: 150,
+                temperature: 1,
+            });
 
-    // Save the updated history back to the file
-    fs.writeFileSync(historyFile, JSON.stringify(history, null, 2), 'utf8');
-  } catch (error) {
-    console.error('Error writing conversation history:', error);
-  }
-};
+            const aiResponse = completion.choices[0].message.content;
 
-// Handle /start command
-bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-  if (msg.chat.type !== 'private') return;
+            // Store AI response in memory
+            userMemory.push({ role: "assistant", content: aiResponse });
 
-  const firstName = msg.from.first_name;
-  const greeting = `Hello ${firstName} 👋🏼, I'm your friendly AI bot. How can I assist you today?`;
+            // Save updated memory
+            await saveMemory(chatId, userMemory);
 
-  // Create inline keyboard with 2 buttons with links
-  const inlineKeyboard = [
-    [
-      {
-        text: 'Send Feedback On telegram', // Button text
-        url: 't.me/aceuchiha100' // URL to open
-      },
-      {
-        text: 'Add on Facebook', // Button text
-        url: 'https://www.facebook.com/profile.php?id=61563840244912' // URL to open
-      }
-    ]
-  ];
-
-  const options = {
-    reply_markup: {
-      inline_keyboard: inlineKeyboard
-    }
-  };
-
-  // Send greeting message with inline keyboard
-  bot.sendMessage(chatId, greeting, options);
+            // ✅ Wait 1 second after typing ends before sending response
+            setTimeout(() => {
+                bot.sendMessage(chatId, aiResponse);
+            }, 1000);
+        } catch (error) {
+            console.error("Error:", error);
+            bot.sendMessage(chatId, "Sorry, I'm busy! Let's talk some other time🏃💨🥲 Use /support to contact my admin if I'm not back soon");
+        }
+    }, typingDelay);
 });
 
-// Handle user messages
-bot.on('message', async (msg) => {
-  const chatId = msg.chat.id;
-
-  if (msg.from.is_bot || !msg.text || msg.text.startsWith('/')) return;
-
-  if (msg.chat.type !== 'private') return;
-
-  const userMessage = msg.text;
-
-  try {
-    // Load conversation history for the current user
-    const conversationHistory = readConversationHistory(chatId);
-
-    // Construct the message history for OpenAI
-    const messages = [
-      { role: 'system', content: 'You are a friendly assistant.' },
-      ...conversationHistory.map(entry => ({
-        role: 'user',
-        content: entry.user
-      })),
-      { role: 'user', content: userMessage }
-    ];
-
-    // Get a response from OpenAI
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: messages,
-    });
-
-    const aiResponse = response.choices[0].message.content;
-
-    // Send the response back to the user
-    bot.sendMessage(chatId, aiResponse);
-
-    // Update the conversation history with the latest exchange
-    updateConversationHistory(chatId, userMessage, aiResponse);
-
-  } catch (error) {
-    console.error('OpenAI API error:', error);
-    bot.sendMessage(chatId, "Sorry, there was an issue processing your request.");
-  }
+// ✅ Express API Routes
+app.get("/", (req, res) => {
+    res.send("Telegram Bot is running! 🚀");
 });
 
-startServer();
+app.get("/status", (req, res) => {
+    res.json({ status: "running" });
+});
 
-console.log('Bot is running...');
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+    console.log(`🚀 Express server running on port ${PORT}`);
+    console.log("Human-like AI bot is running...");
+});
