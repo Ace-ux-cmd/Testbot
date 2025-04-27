@@ -8,4 +8,4 @@ module.exports = (bot) => {
         // Send welcome message
         bot.sendMessage(chatId, welcomeMessage)
     });
-};￼Enter
+};
