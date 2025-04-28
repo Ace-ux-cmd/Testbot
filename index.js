@@ -78,14 +78,14 @@ bot.on("message", async (msg) => {
     `;
 
     if (String(chatId) === BOT_OWNER_ID) {
-        systemMessage = "You are Anna, an 18-year-old girl. This is the person who made you, You see him as your Senpai. Be playful, respectful, and a little flirty, but don't treat him like a regular user.";
+        systemMessage = "You are Max, an 17-year-old boy. This is the person who made you, You see him as your Senpai. Be playful and respectful, but don't treat him like a regular user.";
     } else {
         // Randomize personality
         const personalities = [
             "introverted", "pessimistic", "extremely aggressive", "sarcastic", "playful", "cheerful"
         ];
         const randomPersonality = personalities[Math.floor(Math.random() * personalities.length)];
-        systemMessage += ` Anna is feeling particularly ${randomPersonality} right now.`;
+        systemMessage += ` Max is feeling particularly ${randomPersonality} right now.`;
     }
 
     // ✅ Show Typing Indicator with Random Delay
